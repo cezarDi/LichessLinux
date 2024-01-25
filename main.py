@@ -4,6 +4,10 @@ from PIL import ImageTk, Image
 import threading
 import berserk
 
+import requests
+import json
+
+
 API_TOKEN = "YOUR_TOKEN"
 
 session = berserk.TokenSession(API_TOKEN)
@@ -35,22 +39,59 @@ def make_move(move):
         client.board.make_move(id, move)
 
 
+
+def streamlink(id):
+    return f"https://lichess.org/api/stream/game/{id}"
+
+move_stack = []
+
+
 class ChessGameGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Chess Game")
+    def __init__(self):
+        #self.root = root
+        #self.root.title("Chess Game")
 
         self.board = chess.Board()
         self.selected_square = None
 
-        self.canvas = tk.Canvas(self.root, width=640, height=640)
-        self.canvas.pack()
+        #self.canvas = tk.Canvas(self.root, width=640, height=640)
+        #self.canvas.pack()
 
-        self.images = self.load_images()
+        #self.images = self.load_images()
 
-        self.draw_board()
-        self.canvas.bind("<Button-1>", self.handle_click)
+        #self.draw_board()
+        #self.canvas.bind("<Button-1>", self.handle_click)
 
+    def parsejson(self): #функция не относится к классу и дожна быть вынесена за класс
+        url = streamlink(id)
+        print(url)
+        response = requests.get(url, stream=True)
+        for line in response.iter_lines():
+            dump = json.loads(line)
+            try:
+                last_move = dump["lm"];
+                try:
+                    if (move_stack[-1] != last_move):
+                        move_stack.append(last_move)
+                except IndexError:
+                    move_stack.append(last_move)
+                    print("INSTACK", last_move)
+                    #self.board.push(chess.Move.from_uci(last_move))
+                    #cur = move_stack[-1]
+                    # while (cur == move_stack[-1]):
+                    #     continue
+                    if (last_move != move_stack[0]):
+                        self.board.push(chess.Move.from_uci(last_move))
+                    print("Stack is empty")
+            except KeyError:
+                print('Moves maked: 0')
+        '''
+        headers = {"Accept": "application/x-ndjson"}
+        response = requests.get(url, headers=headers, stream=True)
+        list_resp = response.text.splitlines()
+        json_resp = list(map(lambda x: json.loads(x), list_resp))
+        print( json_resp )
+        '''
     def load_images(self):
         images = {}
         pieces = ["Pw", "Rw", "Nw", "Bw", "Qw", "Kw",
@@ -114,23 +155,49 @@ class ChessGameGUI:
         def accept_moves():
             global queue
             while True:
+
                 move_input = input("Enter your move in UCI notation (e.g. e2e4) or type 'exit' to quit: ")
+                #move_input = input("Enter your move in SAN notation (e.g. e4) or type 'exit' to quit: ")
                 make_move(move_input)
                 if move_input.lower() == 'exit':
                     break
                 move = chess.Move.from_uci(move_input)
-                if move in self.board.legal_moves:
+                # print("type", type(move));
+                #print(type(self.board.legal_moves[0]), self.board.legal_moves[0])
+                print("san", self.board.san(move))
+                san = str(self.board.san(move))
+                legal_moves = list(str(i) for i in tuple(self.board.legal_moves))
+                #print("tuple", str(tup[0]))
+                if san or move in legal_moves:
                     self.board.push(move)
-                    self.draw_board()
+                    #self.draw_board()
                 else:
                     print("Invalid  move. Please try again.")
+                try:
+                    cur = move_stack[-1]
+                    while (cur == move_stack[-1]):
+                        continue
 
+                    print("Lastmove", move_stack[-1])
+                    cur = move_stack[-1]
+                    while (cur == move_stack[-1]):
+                        continue
+                    print("Lastmove2", move_stack[-1])
+                    self.board.push(chess.Move.from_uci(move_stack[-1]))
+                    print(self.board)
+                    #because ping of moves is very big
+
+                except IndexError:
+                    print("No one make move")
+        thread = threading.Thread(target=self.parsejson)
+        thread.start()
         thread = threading.Thread(target=accept_moves)
         thread.start()
 
 
+
 if __name__ == "__main__":
-    root = tk.Tk()
-    game = ChessGameGUI(root)
+    #root = tk.Tk()
+    game = ChessGameGUI()
     game.input_moves_from_console()
-    root.mainloop()
+    #root.mainloop()
